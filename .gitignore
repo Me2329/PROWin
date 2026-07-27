@@ -1,0 +1,16 @@
+build/
+out/
+compile_commands.json
+.cache/
+*.o
+*.obj
+*.exe
+*.pdb
+*.ilk
+
+# Editor state: contains absolute machine-specific paths and a binary cache.
+.vscode/
+
+# No prebuilt binaries belong in a source repository. This directory happened
+# to contain some unrelated ones.
+*.dll

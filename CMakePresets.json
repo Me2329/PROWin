@@ -1,0 +1,122 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "DBT_BUILD_TESTS": "ON",
+        "DBT_WERROR": "ON"
+      }
+    },
+    {
+      "name": "debug",
+      "inherits": "base",
+      "displayName": "Debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "release",
+      "inherits": "base",
+      "displayName": "Release with debug info",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "asan",
+      "inherits": "base",
+      "displayName": "Debug + AddressSanitizer/UBSan (not supported on MinGW)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "DBT_ENABLE_ASAN": "ON"
+      }
+    },
+    {
+      "name": "mac-debug",
+      "displayName": "macOS Debug (Apple Clang)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "DBT_BUILD_TESTS": "ON",
+        "DBT_WERROR": "ON"
+      }
+    },
+    {
+      "name": "mac-release",
+      "inherits": "mac-debug",
+      "displayName": "macOS Release with debug info (Apple Clang)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "mac-asan",
+      "inherits": "mac-debug",
+      "displayName": "macOS Debug + AddressSanitizer/UBSan",
+      "cacheVariables": {
+        "DBT_ENABLE_ASAN": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "asan", "configurePreset": "asan" },
+    { "name": "mac-debug", "configurePreset": "mac-debug" },
+    { "name": "mac-release", "configurePreset": "mac-release" },
+    { "name": "mac-asan", "configurePreset": "mac-asan" }
+  ],
+  "testPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "stopOnFailure": false }
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "mac-debug",
+      "configurePreset": "mac-debug",
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "stopOnFailure": false }
+    },
+    {
+      "name": "mac-release",
+      "configurePreset": "mac-release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "mac-asan",
+      "configurePreset": "mac-asan",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

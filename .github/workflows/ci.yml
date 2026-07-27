@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macos-14 runners are Apple Silicon, so the host-gated execution
+          # tests actually run there rather than being skipped.
+          - { name: "macOS (arm64)", os: macos-14, preset: mac-debug }
+          - { name: "Linux (x86_64)", os: ubuntu-latest, preset: debug }
+          - { name: "Windows (x86_64)", os: windows-latest, preset: debug }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+
+  sanitizers:
+    name: macOS ASan + UBSan
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: seanmiddleditch/gha-setup-ninja@v5
+      - run: cmake --preset mac-asan
+      - run: cmake --build --preset mac-asan
+      - run: ctest --preset mac-asan
