@@ -205,6 +205,36 @@ TEST(Arm64Encoder, ThirtyTwoBitLoadStoreScalesByFour) {
     SUCCEED();
 }
 
+// --- Extension and narrow load/store ---------------------------------------
+
+TEST(Arm64Encoder, ExtensionForms) {
+    using a64::Width;
+    // uxtb w0, w1 / uxth w0, w1 -- writing a W register zero-extends, so these
+    // cover MOVZX at either destination width.
+    static_assert(a64::uxtb(Reg::X0, Reg::X1) == 0x53001C20u);
+    static_assert(a64::uxth(Reg::X0, Reg::X1) == 0x53003C20u);
+    // sxtb x0, w1 / sxth x0, w1 / sxtw x0, w1
+    static_assert(a64::sxtb(Reg::X0, Reg::X1) == 0x93401C20u);
+    static_assert(a64::sxth(Reg::X0, Reg::X1) == 0x93403C20u);
+    static_assert(a64::sxtw(Reg::X0, Reg::X1) == 0x93407C20u);
+    // The signed forms depend on the destination width; the unsigned ones do not.
+    static_assert(a64::sxtb(Reg::X0, Reg::X1, Width::W32) == 0x13001C20u);
+    static_assert(a64::sxtb(Reg::X0, Reg::X1, Width::W32) !=
+                  a64::sxtb(Reg::X0, Reg::X1, Width::X64));
+    SUCCEED();
+}
+
+TEST(Arm64Encoder, ByteAndHalfwordLoadStore) {
+    static_assert(a64::ldrb(Reg::X0, Reg::X1) == 0x39400020u);
+    static_assert(a64::ldrh(Reg::X0, Reg::X1) == 0x79400020u);
+    static_assert(a64::strb(Reg::X0, Reg::X1) == 0x39000020u);
+    static_assert(a64::strh(Reg::X0, Reg::X1) == 0x79000020u);
+    // LDRB is unscaled; LDRH scales its offset by two.
+    static_assert(a64::ldrb(Reg::X0, Reg::X1, 1) == 0x39400420u);
+    static_assert(a64::ldrh(Reg::X0, Reg::X1, 2) == 0x79400420u);
+    SUCCEED();
+}
+
 // --- Register mapping ------------------------------------------------------
 
 TEST(RegisterMap, X86GprsMapOntoX0ThroughX15) {

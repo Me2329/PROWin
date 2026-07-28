@@ -414,6 +414,34 @@ LiftError BlockLifter::lower(const DecodedInst& inst) {
                                                : LiftError::UnsupportedOperand;
     }
 
+    case Mnemonic::Movzx:
+    case Mnemonic::Movsx: {
+        if (inst.operand_count != 2) {
+            return LiftError::UnsupportedOperand;
+        }
+        const Operand& source = inst.op(1);
+
+        ir::InstId value = ir::kNoInst;
+        if (source.kind == OperandKind::Register) {
+            // The narrow value occupies the low bits of the full guest
+            // register, so read the whole register and let the extend select.
+            value = builder_.load_guest_reg(source.reg, ir::Type::I64);
+        } else if (source.kind == OperandKind::Memory) {
+            value = builder_.load_mem(effective_address(inst, source),
+                                      type_for(source.size_bits));
+        } else {
+            return LiftError::UnsupportedOperand;
+        }
+
+        // MOVZX/MOVSX leave EFLAGS untouched, so last_flags_ stays as it was.
+        const ir::InstId result = builder_.extend(
+            inst.mnemonic == Mnemonic::Movzx ? ir::Opcode::ZeroExtend
+                                             : ir::Opcode::SignExtend,
+            value, source.size_bits, type_for(inst.op(0).size_bits));
+        return write(inst, inst.op(0), result) ? LiftError::None
+                                               : LiftError::UnsupportedOperand;
+    }
+
     case Mnemonic::Invalid:
         break;
     }

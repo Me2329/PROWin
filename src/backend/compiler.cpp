@@ -227,8 +227,14 @@ void FunctionCompiler::lower(ir::InstId id, usize position) {
     // into the full register on both architectures, so the W-register forms
     // carry x86's semantics exactly. Narrower widths still have merge
     // semantics that are not modelled, so they stay refused.
+    // Narrow widths are meaningful only on memory accesses, where LDRB/LDRH
+    // zero-extend cleanly. A narrow *register* write merges into the existing
+    // value, which is not modelled, so that stays refused.
+    const bool narrow = (in.type == ir::Type::I8) || (in.type == ir::Type::I16);
+    const bool narrow_ok = narrow && (in.opcode == ir::Opcode::LoadMem ||
+                                      in.opcode == ir::Opcode::StoreMem);
     const bool width_ok = (in.type == ir::Type::I64) || (in.type == ir::Type::I32) ||
-                          (in.type == ir::Type::Flags);
+                          (in.type == ir::Type::Flags) || narrow_ok;
     if (!width_ok) {
         fail(CompileError::UnsupportedWidth, id);
         return;
@@ -303,16 +309,40 @@ void FunctionCompiler::lower(ir::InstId id, usize position) {
             return;
         }
         value_reg_[id] = dst;
-        emit(width == a64::Width::W32 ? a64::ldr_imm32(dst, addr, 0)
-                                      : a64::ldr_imm(dst, addr, 0));
+        switch (in.type) {
+        case ir::Type::I8:
+            emit(a64::ldrb(dst, addr, 0));
+            break;
+        case ir::Type::I16:
+            emit(a64::ldrh(dst, addr, 0));
+            break;
+        case ir::Type::I32:
+            emit(a64::ldr_imm32(dst, addr, 0));
+            break;
+        default:
+            emit(a64::ldr_imm(dst, addr, 0));
+            break;
+        }
         break;
     }
 
     case ir::Opcode::StoreMem: {
         const Reg addr = reg_of(in.operands[0]);
         const Reg value = reg_of(in.operands[1]);
-        emit(width == a64::Width::W32 ? a64::str_imm32(value, addr, 0)
-                                      : a64::str_imm(value, addr, 0));
+        switch (in.type) {
+        case ir::Type::I8:
+            emit(a64::strb(value, addr, 0));
+            break;
+        case ir::Type::I16:
+            emit(a64::strh(value, addr, 0));
+            break;
+        case ir::Type::I32:
+            emit(a64::str_imm32(value, addr, 0));
+            break;
+        default:
+            emit(a64::str_imm(value, addr, 0));
+            break;
+        }
         break;
     }
 
@@ -393,6 +423,36 @@ void FunctionCompiler::lower(ir::InstId id, usize position) {
         }
         value_reg_[id] = dst;
         emit(a64::with_width(a64::neg_reg(dst, src, true), width));
+        break;
+    }
+
+    case ir::Opcode::ZeroExtend:
+    case ir::Opcode::SignExtend: {
+        const Reg src = reg_of(in.operands[0]);
+        const Reg dst = acquire_temp(id);
+        if (failed()) {
+            return;
+        }
+        value_reg_[id] = dst;
+
+        const bool sign = (in.opcode == ir::Opcode::SignExtend);
+        switch (in.imm) {
+        case 8:
+            emit(sign ? a64::sxtb(dst, src, width) : a64::uxtb(dst, src));
+            break;
+        case 16:
+            emit(sign ? a64::sxth(dst, src, width) : a64::uxth(dst, src));
+            break;
+        case 32:
+            // Writing a W register already zero-extends, so only the signed
+            // form needs a dedicated instruction here.
+            emit(sign ? a64::sxtw(dst, src)
+                      : a64::with_width(a64::mov_reg(dst, src), a64::Width::W32));
+            break;
+        default:
+            fail(CompileError::UnsupportedWidth, id);
+            return;
+        }
         break;
     }
 

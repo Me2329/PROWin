@@ -587,6 +587,59 @@ TEST_F(LifterTest, IncAndDecLowerToTheirOwnOpcodes) {
     EXPECT_EQ(count_opcode(lift_ok(inc_code).function, Opcode::Add), 0u);
 }
 
+// --- Extending moves -------------------------------------------------------
+
+TEST_F(LifterTest, MovzxAndMovsxCarryTheirSourceWidth) {
+    // 0F B6 C3  movzx eax, bl  |  C3
+    const std::array<u8, 4> zx{0x0F, 0xB6, 0xC3, 0xC3};
+    const auto zx_res = lift_ok(zx);
+    const Inst* zext = find_opcode(zx_res.function, Opcode::ZeroExtend);
+    ASSERT_NE(zext, nullptr) << zx_res.function.to_string();
+    EXPECT_EQ(zext->imm, 8);
+
+    // 48 0F BE C3  movsx rax, bl  |  C3
+    const std::array<u8, 5> sx{0x48, 0x0F, 0xBE, 0xC3, 0xC3};
+    const auto sx_res = lift_ok(sx);
+    const Inst* sext = find_opcode(sx_res.function, Opcode::SignExtend);
+    ASSERT_NE(sext, nullptr) << sx_res.function.to_string();
+    EXPECT_EQ(sext->imm, 8);
+}
+
+TEST_F(LifterTest, RegisterSourcesAreReadAtFullWidth) {
+    // The byte lives in the low bits of the whole guest register, so the load
+    // is 64-bit and the extend does the narrowing -- no I8 register read.
+    const std::array<u8, 4> code{0x0F, 0xB6, 0xC3, 0xC3};  // movzx eax, bl
+    const auto res = lift_ok(code);
+    EXPECT_EQ(res.function.inst(0).opcode, Opcode::LoadGuestReg);
+    EXPECT_EQ(res.function.inst(0).guest_reg, X86Reg::Rbx);
+    EXPECT_EQ(res.function.inst(0).type, dbt::ir::Type::I64);
+}
+
+TEST_F(LifterTest, MovzxFromMemoryEmitsANarrowLoad) {
+    // 0F B6 03  movzx eax, byte [rbx]  |  C3
+    const std::array<u8, 4> code{0x0F, 0xB6, 0x03, 0xC3};
+    const auto res = lift_ok(code);
+
+    const Inst* load = find_opcode(res.function, Opcode::LoadMem);
+    ASSERT_NE(load, nullptr) << res.function.to_string();
+    EXPECT_EQ(load->type, dbt::ir::Type::I8);
+}
+
+TEST_F(LifterTest, ExtendingMovesPreserveFlags) {
+    // cmp rax, rbx | movzx ecx, bl | je +2
+    // x86 MOVZX does not touch EFLAGS, so the JE must still see the CMP.
+    const std::array<u8, 8> code{0x48, 0x39, 0xD8,  // cmp rax, rbx
+                                 0x0F, 0xB6, 0xCB,  // movzx ecx, bl
+                                 0x74, 0x02};       // je +2
+    const auto res = lift_ok(code);
+
+    const Inst* branch = find_opcode(res.function, Opcode::Branch);
+    ASSERT_NE(branch, nullptr) << res.function.to_string();
+    EXPECT_EQ(res.function.inst(branch->operands[0]).opcode, Opcode::Cmp);
+    static_assert(!dbt::ir::defines_flags(Opcode::ZeroExtend));
+    static_assert(!dbt::ir::defines_flags(Opcode::SignExtend));
+}
+
 TEST_F(LifterTest, ErrorNames) {
     EXPECT_EQ(dbt::frontend::to_string(LiftError::None), "none");
     EXPECT_EQ(dbt::frontend::to_string(LiftError::DecodeFailed), "decode-failed");

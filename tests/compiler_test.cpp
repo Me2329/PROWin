@@ -701,6 +701,49 @@ TEST(Compiler, CarryTestAfterACompareIsStillAllowed) {
     EXPECT_EQ(compile_x86_verdict(code), CompileError::None);
 }
 
+// --- Extending moves -------------------------------------------------------
+
+TEST(Compiler, MovzxLowersToUnsignedExtension) {
+    // 0F B6 C3  movzx eax, bl  |  C3 -- bl is the low byte of rbx (x3).
+    const std::array<u8, 4> byte_code{0x0F, 0xB6, 0xC3, 0xC3};
+    EXPECT_TRUE(contains(compile_x86(byte_code), a64::uxtb(Reg::X16, Reg::X3)));
+
+    // 0F B7 C3  movzx eax, bx
+    const std::array<u8, 4> word_code{0x0F, 0xB7, 0xC3, 0xC3};
+    EXPECT_TRUE(contains(compile_x86(word_code), a64::uxth(Reg::X16, Reg::X3)));
+}
+
+TEST(Compiler, MovsxLowersToSignedExtensionAtTheDestinationWidth) {
+    // 48 0F BE C3  movsx rax, bl -- 64-bit destination.
+    const std::array<u8, 5> wide{0x48, 0x0F, 0xBE, 0xC3, 0xC3};
+    EXPECT_TRUE(contains(compile_x86(wide),
+                         a64::sxtb(Reg::X16, Reg::X3, a64::Width::X64)));
+
+    // 0F BE C3  movsx eax, bl -- a 32-bit destination uses the W form.
+    const std::array<u8, 4> narrow{0x0F, 0xBE, 0xC3, 0xC3};
+    EXPECT_TRUE(contains(compile_x86(narrow),
+                         a64::sxtb(Reg::X16, Reg::X3, a64::Width::W32)));
+}
+
+TEST(Compiler, MovsxdLowersToSxtw) {
+    // 48 63 C3  movsxd rax, ebx  |  C3
+    const std::array<u8, 4> code{0x48, 0x63, 0xC3, 0xC3};
+    EXPECT_TRUE(contains(compile_x86(code), a64::sxtw(Reg::X16, Reg::X3)));
+}
+
+TEST(Compiler, ByteMemorySourceUsesLdrb) {
+    // 0F B6 03  movzx eax, byte [rbx]  |  C3
+    const std::array<u8, 4> code{0x0F, 0xB6, 0x03, 0xC3};
+    EXPECT_TRUE(contains(compile_x86(code), a64::ldrb(Reg::X16, Reg::X3)));
+}
+
+TEST(Compiler, NarrowRegisterWritesAreStillRefused) {
+    // 88 D8  mov al, bl -- an 8-bit register write merges into the existing
+    // register rather than zero-extending, which is not modelled.
+    const std::array<u8, 3> code{0x88, 0xD8, 0xC3};
+    EXPECT_EQ(compile_x86_verdict(code), CompileError::UnsupportedWidth);
+}
+
 TEST(Compiler, EveryEmittedWordIsFourBytes) {
     const std::array<u8, 4> code{0x48, 0x01, 0xD8, 0xC3};
     const auto result = compile_x86(code);

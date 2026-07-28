@@ -86,6 +86,10 @@ enum class Opcode : u8 {
     /// (value) +/- 1. x86 deliberately preserves CF, which ARM64 cannot.
     Inc,
     Dec,
+    /// (value) widened from its low `imm` bits. x86 MOVZX/MOVSX leave EFLAGS
+    /// untouched, so neither defines any flag.
+    ZeroExtend,
+    SignExtend,
     /// unconditional transfer to true_block
     Jump,
     /// (flags) -> true_block if cond holds, else false_block
@@ -120,6 +124,8 @@ enum class Opcode : u8 {
     case Opcode::Sar:
     case Opcode::Inc:
     case Opcode::Dec:
+    case Opcode::ZeroExtend:
+    case Opcode::SignExtend:
         return true;
     case Opcode::StoreGuestReg:
     case Opcode::StoreMem:
@@ -247,6 +253,8 @@ inline constexpr u8 kAll = kCarry | kZero | kSign | kOverflow;
     case Opcode::Sar:
     case Opcode::Inc:
     case Opcode::Dec:
+    case Opcode::ZeroExtend:
+    case Opcode::SignExtend:
         return 1;
     case Opcode::StoreMem:
     case Opcode::Add:
@@ -378,6 +386,8 @@ public:
     InstId shift(Opcode opcode, InstId value, i64 amount, Type type = Type::I64);
     /// `opcode` must be Inc or Dec.
     InstId step(Opcode opcode, InstId value, Type type = Type::I64);
+    /// `opcode` must be ZeroExtend or SignExtend; `source_bits` is 8, 16 or 32.
+    InstId extend(Opcode opcode, InstId value, i64 source_bits, Type type);
     InstId jump(BlockId target);
     InstId branch(InstId flags, decoder::Cond cond, BlockId taken, BlockId fallthrough);
     InstId ret();

@@ -68,6 +68,8 @@ enum class Mnemonic : u8 {
     Sar,
     Inc,
     Dec,
+    Movzx,
+    Movsx,
 };
 
 /// x86 condition codes, ordered by their `tttn` encoding.

@@ -299,6 +299,65 @@ enum class Width : u8 {
     return 0xB9000000u | (scaled << 10) | (detail::r(rn) << 5) | detail::r(rt);
 }
 
+/// LDRB Wt, [Xn, #byte_offset] -- zero-extending byte load, offset unscaled.
+[[nodiscard]] constexpr Arm64Word ldrb(Reg rt, Reg rn, u32 byte_offset = 0) noexcept {
+    return 0x39400000u | (detail::mask(byte_offset, 12) << 10) |
+           (detail::r(rn) << 5) | detail::r(rt);
+}
+
+/// LDRH Wt, [Xn, #byte_offset] -- zero-extending halfword load, offset /2.
+[[nodiscard]] constexpr Arm64Word ldrh(Reg rt, Reg rn, u32 byte_offset = 0) noexcept {
+    return 0x79400000u | (detail::mask(byte_offset / 2u, 12) << 10) |
+           (detail::r(rn) << 5) | detail::r(rt);
+}
+
+/// STRB Wt, [Xn, #byte_offset]
+[[nodiscard]] constexpr Arm64Word strb(Reg rt, Reg rn, u32 byte_offset = 0) noexcept {
+    return 0x39000000u | (detail::mask(byte_offset, 12) << 10) |
+           (detail::r(rn) << 5) | detail::r(rt);
+}
+
+/// STRH Wt, [Xn, #byte_offset]
+[[nodiscard]] constexpr Arm64Word strh(Reg rt, Reg rn, u32 byte_offset = 0) noexcept {
+    return 0x79000000u | (detail::mask(byte_offset / 2u, 12) << 10) |
+           (detail::r(rn) << 5) | detail::r(rt);
+}
+
+// --- Extension -------------------------------------------------------------
+//
+// UXTB/UXTH write a W register, which zero-extends into the full X register,
+// so they cover x86 MOVZX at either destination width. The sign-extending
+// forms are SBFM and do depend on the destination width.
+
+/// UXTB Wd, Wn -- zero-extend the low byte.
+[[nodiscard]] constexpr Arm64Word uxtb(Reg rd, Reg rn) noexcept {
+    return 0x53001C00u | (detail::r(rn) << 5) | detail::r(rd);
+}
+
+/// UXTH Wd, Wn -- zero-extend the low halfword.
+[[nodiscard]] constexpr Arm64Word uxth(Reg rd, Reg rn) noexcept {
+    return 0x53003C00u | (detail::r(rn) << 5) | detail::r(rd);
+}
+
+/// SXTB Xd/Wd, Wn -- sign-extend the low byte.
+[[nodiscard]] constexpr Arm64Word sxtb(Reg rd, Reg rn,
+                                       Width width = Width::X64) noexcept {
+    const u32 base = (width == Width::X64) ? 0x93401C00u : 0x13001C00u;
+    return base | (detail::r(rn) << 5) | detail::r(rd);
+}
+
+/// SXTH Xd/Wd, Wn -- sign-extend the low halfword.
+[[nodiscard]] constexpr Arm64Word sxth(Reg rd, Reg rn,
+                                       Width width = Width::X64) noexcept {
+    const u32 base = (width == Width::X64) ? 0x93403C00u : 0x13003C00u;
+    return base | (detail::r(rn) << 5) | detail::r(rd);
+}
+
+/// SXTW Xd, Wn -- sign-extend a 32-bit value to 64 bits.
+[[nodiscard]] constexpr Arm64Word sxtw(Reg rd, Reg rn) noexcept {
+    return 0x93407C00u | (detail::r(rn) << 5) | detail::r(rd);
+}
+
 /// STP Xt, Xt2, [Xn, #offset]!  (pre-index, writes back to Xn)
 [[nodiscard]] constexpr Arm64Word stp_pre(Reg rt, Reg rt2, Reg rn,
                                           i32 byte_offset) noexcept {

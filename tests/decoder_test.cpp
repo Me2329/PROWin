@@ -517,6 +517,37 @@ TEST_F(DecoderTest, ShiftsAndStepsDecode) {
     EXPECT_EQ(dec.decode(dec_rax, kBase).inst.mnemonic, Mnemonic::Dec);
 }
 
+TEST_F(DecoderTest, ExtendingMovesDecodeWithTheirSourceWidth) {
+    // 0F B6 C3  movzx eax, bl
+    const std::array<u8, 3> zx_byte{0x0F, 0xB6, 0xC3};
+    const auto zx = dec.decode(zx_byte, kBase);
+    ASSERT_TRUE(zx.ok()) << zx.error;
+    EXPECT_EQ(zx.inst.mnemonic, Mnemonic::Movzx);
+    ASSERT_EQ(zx.inst.operand_count, 2);
+    EXPECT_EQ(zx.inst.op(0).size_bits, 32);
+    EXPECT_EQ(zx.inst.op(1).size_bits, 8);  // the width the extend starts from
+    EXPECT_EQ(zx.inst.op(1).reg, X86Reg::Rbx);
+
+    // 0F B7 C3  movzx eax, bx
+    const std::array<u8, 3> zx_word{0x0F, 0xB7, 0xC3};
+    EXPECT_EQ(dec.decode(zx_word, kBase).inst.op(1).size_bits, 16);
+
+    // 48 0F BE C3  movsx rax, bl
+    const std::array<u8, 4> sx_byte{0x48, 0x0F, 0xBE, 0xC3};
+    const auto sx = dec.decode(sx_byte, kBase);
+    ASSERT_TRUE(sx.ok()) << sx.error;
+    EXPECT_EQ(sx.inst.mnemonic, Mnemonic::Movsx);
+    EXPECT_EQ(sx.inst.op(0).size_bits, 64);
+    EXPECT_EQ(sx.inst.op(1).size_bits, 8);
+
+    // 48 63 C3  movsxd rax, ebx -- folded onto Movsx; the widths distinguish it.
+    const std::array<u8, 3> sxd{0x48, 0x63, 0xC3};
+    const auto wide = dec.decode(sxd, kBase);
+    ASSERT_TRUE(wide.ok()) << wide.error;
+    EXPECT_EQ(wide.inst.mnemonic, Mnemonic::Movsx);
+    EXPECT_EQ(wide.inst.op(1).size_bits, 32);
+}
+
 TEST_F(DecoderTest, RegisterEnumeratorsMatchHardwareEncoding) {
     static_assert(static_cast<dbt::u8>(X86Reg::Rax) == 0);
     static_assert(static_cast<dbt::u8>(X86Reg::Rcx) == 1);

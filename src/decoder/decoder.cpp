@@ -208,6 +208,14 @@ DecodeResult Decoder::decode(std::span<const u8> code, GuestAddr address) const 
     case ZYDIS_MNEMONIC_DEC:
         result.inst.mnemonic = Mnemonic::Dec;
         break;
+    case ZYDIS_MNEMONIC_MOVZX:
+        result.inst.mnemonic = Mnemonic::Movzx;
+        break;
+    case ZYDIS_MNEMONIC_MOVSX:
+    case ZYDIS_MNEMONIC_MOVSXD:
+        // MOVSXD is the 32-to-64 form; the operand widths distinguish them.
+        result.inst.mnemonic = Mnemonic::Movsx;
+        break;
     default: {
         const Cond cond = map_condition(zinst.mnemonic);
         if (cond == Cond::None) {
@@ -345,6 +353,10 @@ std::string_view to_string(Mnemonic value) noexcept {
         return "inc";
     case Mnemonic::Dec:
         return "dec";
+    case Mnemonic::Movzx:
+        return "movzx";
+    case Mnemonic::Movsx:
+        return "movsx";
     case Mnemonic::Invalid:
         break;
     }

@@ -371,6 +371,16 @@ InstId IRBuilder::step(Opcode opcode, InstId value, Type type) {
     return emit(in);
 }
 
+InstId IRBuilder::extend(Opcode opcode, InstId value, i64 source_bits, Type type) {
+    Inst in;
+    in.opcode = opcode;
+    in.type = type;
+    in.operands[0] = value;
+    in.operand_count = 1;
+    in.imm = source_bits;
+    return emit(in);
+}
+
 InstId IRBuilder::jump(BlockId target) {
     Inst in;
     in.opcode = Opcode::Jump;
@@ -445,6 +455,10 @@ std::string_view to_string(Opcode value) noexcept {
         return "inc";
     case Opcode::Dec:
         return "dec";
+    case Opcode::ZeroExtend:
+        return "zext";
+    case Opcode::SignExtend:
+        return "sext";
     case Opcode::Jump:
         return "jump";
     case Opcode::Branch:
