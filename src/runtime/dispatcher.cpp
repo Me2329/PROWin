@@ -14,7 +14,23 @@ Dispatcher::Dispatcher(std::span<const u8> guest_code, GuestAddr base, Options o
       base_(base),
       options_(options),
       lifter_(options.lifter),
-      compiler_(options.compiler) {}
+      compiler_(options.compiler),
+      // Value-initialised, so every slot starts null: "not linked yet".
+      link_table_(std::make_unique<void*[]>(kMaxLinkSlots)) {}
+
+void Dispatcher::install_links(GuestAddr addr, const TranslatedBlock& block) {
+    const auto waiting = pending_links_.find(addr);
+    if (waiting == pending_links_.end()) {
+        return;
+    }
+    for (const usize slot : waiting->second) {
+        if (slot < kMaxLinkSlots && link_table_[slot] == nullptr) {
+            link_table_[slot] = block.chained_entry();
+            ++linked_exits_;
+        }
+    }
+    pending_links_.erase(waiting);
+}
 
 TranslateResult Dispatcher::translate(GuestAddr addr) {
     TranslateResult result;
@@ -39,7 +55,10 @@ TranslateResult Dispatcher::translate(GuestAddr addr) {
         return result;
     }
 
-    const auto compiled = compiler_.compile(lifted.function);
+    // Slot indices are baked into the emitted loads, so the base has to be
+    // decided before compiling.
+    const usize slot_base = next_link_slot_;
+    const auto compiled = compiler_.compile(lifted.function, slot_base);
     if (!compiled.ok()) {
         result.status = TranslateStatus::CompileFailed;
         result.compile_error = compiled.error;
@@ -70,8 +89,27 @@ TranslateResult Dispatcher::translate(GuestAddr addr) {
         return result;
     }
 
-    result.block = cache_.insert(
+    const TranslatedBlock* installed = cache_.insert(
         addr, TranslatedBlock(addr, std::move(memory), compiled.words.size()));
+    result.block = installed;
+
+    // Claim this block's slots, and link the ones whose target already exists.
+    for (const backend::LinkSite& site : compiled.link_sites) {
+        if (site.slot >= kMaxLinkSlots) {
+            continue;
+        }
+        next_link_slot_ = std::max(next_link_slot_, site.slot + 1);
+        if (const TranslatedBlock* target = cache_.find(site.target);
+            target != nullptr) {
+            link_table_[site.slot] = target->chained_entry();
+            ++linked_exits_;
+        } else {
+            pending_links_[site.target].push_back(site.slot);
+        }
+    }
+
+    // This block may in turn be what earlier exits were waiting for.
+    install_links(addr, *installed);
     return result;
 }
 
@@ -84,6 +122,9 @@ RunResult Dispatcher::run(CpuState& state) {
         result.status = ExecStatus::HostCannotExecute;
         return result;
     }
+
+    // Hand compiled code the link table so chained exits can find successors.
+    state.link_table = link_table_.get();
 
     while (result.steps < options_.max_steps) {
         result.stopped_at = state.rip;

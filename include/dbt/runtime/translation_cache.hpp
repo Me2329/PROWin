@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "dbt/backend/compiler.hpp"
 #include "dbt/backend/jit_memory.hpp"
 #include "dbt/common/types.hpp"
 #include "dbt/runtime/cpu_state.hpp"
@@ -34,6 +35,14 @@ public:
     /// The block's entry point. Only safe to call on an ARM64 host, and only
     /// once executable() is true.
     [[nodiscard]] BlockFn entry() const noexcept { return memory_.entry<BlockFn>(); }
+
+    /// Entry point for a *chained* branch: past the prologue, because the
+    /// predecessor left the guest registers live in x0-x15 and the frame it
+    /// pushed is still current.
+    [[nodiscard]] void* chained_entry() const noexcept {
+        auto* base = static_cast<u8*>(const_cast<void*>(memory_.code()));
+        return base + backend::kPrologueWords * kArm64InstSize;
+    }
 
 private:
     backend::JitMemory memory_;

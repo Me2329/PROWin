@@ -82,7 +82,12 @@ public:
     Compiler() = default;
     explicit Compiler(Options options) : options_(options) {}
 
-    [[nodiscard]] CompileResult compile(const ir::Function& function) const;
+    /// `first_link_slot` is the base index this block's chainable exits are
+    /// numbered from, so slots stay unique across the whole link table. The
+    /// offsets are baked into the emitted loads, hence they must be final at
+    /// compile time.
+    [[nodiscard]] CompileResult compile(const ir::Function& function,
+                                        usize first_link_slot = 0) const;
 
     [[nodiscard]] const Options& options() const noexcept { return options_; }
 

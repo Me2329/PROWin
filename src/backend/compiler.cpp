@@ -33,8 +33,9 @@ struct Fixup {
 
 class FunctionCompiler {
 public:
-    FunctionCompiler(const ir::Function& function, usize max_words)
-        : func_(function), max_words_(max_words) {}
+    FunctionCompiler(const ir::Function& function, usize max_words,
+                     usize first_link_slot)
+        : func_(function), max_words_(max_words), first_link_slot_(first_link_slot) {}
 
     CompileResult run();
 
@@ -70,6 +71,7 @@ private:
 
     const ir::Function& func_;
     usize max_words_ = 0;
+    usize first_link_slot_ = 0;
 
     std::vector<Arm64Word> words_;
     std::vector<Fixup> fixups_;
@@ -218,7 +220,7 @@ void FunctionCompiler::emit_chain_check() {
         return;
     }
 
-    const usize slot = link_sites_.size();
+    const usize slot = first_link_slot_ + link_sites_.size();
     const auto slot_offset = static_cast<u32>(slot * 8);
     if (!a64::fits_ldst_offset64(slot_offset)) {
         // More exits than the load offset can address; leave this one
@@ -652,8 +654,9 @@ CompileResult FunctionCompiler::run() {
 
 }  // namespace
 
-CompileResult Compiler::compile(const ir::Function& function) const {
-    FunctionCompiler compiler(function, options_.max_words);
+CompileResult Compiler::compile(const ir::Function& function,
+                                usize first_link_slot) const {
+    FunctionCompiler compiler(function, options_.max_words, first_link_slot);
     return compiler.run();
 }
 

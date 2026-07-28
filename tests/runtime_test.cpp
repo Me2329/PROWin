@@ -187,6 +187,51 @@ TEST(Dispatcher, DistinctAddressesGetDistinctBlocks) {
     EXPECT_EQ(dispatcher.cache().size(), 2u);
 }
 
+// --- Block chaining --------------------------------------------------------
+
+/// EB 00  jmp +0   (targets the RET two bytes on)
+/// C3     ret
+constexpr std::array<u8, 3> kJumpThenRet{0xEB, 0x00, 0xC3};
+
+TEST(Dispatcher, ExitsLinkOnceTheirTargetIsTranslated) {
+    Dispatcher dispatcher(kJumpThenRet, kBase);
+
+    // The jump's exit has nowhere to go yet, so it stays unlinked.
+    ASSERT_TRUE(dispatcher.translate(kBase).ok());
+    EXPECT_EQ(dispatcher.linked_exits(), 0u);
+
+    // Translating the target satisfies the waiting exit.
+    ASSERT_TRUE(dispatcher.translate(kBase + 2).ok());
+    EXPECT_EQ(dispatcher.linked_exits(), 1u);
+}
+
+TEST(Dispatcher, ExitLinksImmediatelyWhenTheTargetAlreadyExists) {
+    Dispatcher dispatcher(kJumpThenRet, kBase);
+
+    // Translate the target first; it is a RET, so it contributes no exits.
+    ASSERT_TRUE(dispatcher.translate(kBase + 2).ok());
+    EXPECT_EQ(dispatcher.linked_exits(), 0u);
+
+    // Now the jump can be linked without ever going on the pending list.
+    ASSERT_TRUE(dispatcher.translate(kBase).ok());
+    EXPECT_EQ(dispatcher.linked_exits(), 1u);
+}
+
+TEST(Dispatcher, ChainedEntrySkipsThePrologue) {
+    // The whole point of chaining: the predecessor leaves the guest registers
+    // live, so the successor must not reload them.
+    Dispatcher dispatcher(kJumpThenRet, kBase);
+    const auto res = dispatcher.translate(kBase);
+    ASSERT_TRUE(res.ok());
+    ASSERT_NE(res.block, nullptr);
+
+    const auto* entry = static_cast<const dbt::u8*>(res.block->code());
+    const auto* chained = static_cast<const dbt::u8*>(res.block->chained_entry());
+    EXPECT_EQ(chained - entry,
+              static_cast<std::ptrdiff_t>(dbt::backend::kPrologueWords *
+                                          dbt::kArm64InstSize));
+}
+
 TEST(Dispatcher, StatusNames) {
     EXPECT_EQ(dbt::runtime::to_string(TranslateStatus::OutOfBounds), "out-of-bounds");
     EXPECT_EQ(dbt::runtime::to_string(TranslateStatus::CompileFailed),

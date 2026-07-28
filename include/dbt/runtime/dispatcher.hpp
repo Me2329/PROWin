@@ -1,7 +1,10 @@
 #pragma once
 
+#include <memory>
 #include <span>
 #include <string_view>
+#include <unordered_map>
+#include <vector>
 
 #include "dbt/backend/compiler.hpp"
 #include "dbt/backend/jit_memory.hpp"
@@ -101,18 +104,36 @@ public:
         return addr >= base_ && (addr - base_) < guest_code_.size();
     }
 
+    /// Chainable exits the link table can address. The slot offset is baked
+    /// into a scaled 12-bit load, which tops out here; beyond it exits simply
+    /// return to the dispatcher, so correctness is unaffected.
+    static constexpr usize kMaxLinkSlots = 4096;
+
+    /// Number of exits currently linked to a translated successor.
+    [[nodiscard]] usize linked_exits() const noexcept { return linked_exits_; }
+
     [[nodiscard]] const TranslationCache& cache() const noexcept { return cache_; }
     [[nodiscard]] TranslationCache& cache() noexcept { return cache_; }
     [[nodiscard]] GuestAddr base() const noexcept { return base_; }
     [[nodiscard]] const Options& options() const noexcept { return options_; }
 
 private:
+    /// Points every exit waiting on `addr` at the block just translated for it.
+    void install_links(GuestAddr addr, const TranslatedBlock& block);
+
     std::span<const u8> guest_code_;
     GuestAddr base_ = 0;
     Options options_;
     TranslationCache cache_;
     frontend::Lifter lifter_;
     backend::Compiler compiler_;
+
+    /// Fixed-size so the pointer handed to compiled code never moves.
+    std::unique_ptr<void*[]> link_table_;
+    usize next_link_slot_ = 0;
+    usize linked_exits_ = 0;
+    /// Exits whose target has not been translated yet, keyed by that target.
+    std::unordered_map<GuestAddr, std::vector<usize>> pending_links_;
 };
 
 }  // namespace dbt::runtime

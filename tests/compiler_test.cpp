@@ -765,6 +765,54 @@ TEST(Compiler, IndirectCallCompilesToPushPlusRipPublication) {
                              static_cast<dbt::u32>(dbt::runtime::kRipOffset))));
 }
 
+// --- Block chaining --------------------------------------------------------
+
+TEST(Compiler, ChainableExitEmitsAGuardedLinkCheck) {
+    // EB 05  jmp +5 -- the exit block has a statically known target, so it can
+    // be chained once that target is translated.
+    const std::array<u8, 2> code{0xEB, 0x05};
+    const auto result = compile_x86(code);
+
+    ASSERT_EQ(result.link_sites.size(), 1u);
+    EXPECT_EQ(result.link_sites[0].slot, 0u);
+    EXPECT_EQ(result.link_sites[0].target, 0x1000u + 2 + 5);
+
+    // Both loads are guarded. A null table means chaining is off and a null
+    // slot means the successor is not translated yet; neither may be
+    // dereferenced or branched to.
+    EXPECT_TRUE(contains(
+        result, a64::ldr_imm(Reg::X16, Reg::X28,
+                             static_cast<dbt::u32>(dbt::runtime::kLinkTableOffset))));
+    EXPECT_TRUE(contains(result, a64::cbz(Reg::X16, 16)));  // skip past the branch
+    EXPECT_TRUE(contains(result, a64::cbz(Reg::X16, 8)));
+    EXPECT_TRUE(contains(result, a64::br(Reg::X16)));
+}
+
+TEST(Compiler, LinkSlotsAreNumberedFromTheGivenBase) {
+    // cmp rax, rbx ; je +2 -- a taken exit and a fallthrough exit.
+    const std::array<u8, 5> code{0x48, 0x39, 0xD8, 0x74, 0x02};
+    const dbt::frontend::Lifter lifter;
+    const auto lifted = lifter.lift_block(code, 0x1000);
+    ASSERT_TRUE(lifted.ok());
+
+    const Compiler compiler;
+    const auto result = compiler.compile(lifted.function, 10);
+    ASSERT_TRUE(result.ok()) << dbt::backend::to_string(result.error);
+    ASSERT_EQ(result.link_sites.size(), 2u);
+    // Slots continue from the base so they stay unique across the whole table.
+    EXPECT_EQ(result.link_sites[0].slot, 10u);
+    EXPECT_EQ(result.link_sites[1].slot, 11u);
+    EXPECT_NE(result.link_sites[0].target, result.link_sites[1].target);
+}
+
+TEST(Compiler, ReturnsWithNoStaticSuccessorAreNotChained) {
+    // C3  ret -- the successor comes off the stack at run time, so there is
+    // nothing to link.
+    const std::array<u8, 1> code{0xC3};
+    const auto result = compile_x86(code);
+    EXPECT_TRUE(result.link_sites.empty());
+}
+
 TEST(Compiler, EveryEmittedWordIsFourBytes) {
     const std::array<u8, 4> code{0x48, 0x01, 0xD8, 0xC3};
     const auto result = compile_x86(code);
