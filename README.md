@@ -23,8 +23,10 @@ binary.
 
 If you want to *run* x86 software on ARM today, use
 [FEX-Emu](https://github.com/FEX-Emu/FEX), [box64](https://github.com/ptitSeb/box64)
-or [QEMU](https://www.qemu.org/). This project exists to make the technique
-legible.
+or [QEMU](https://www.qemu.org/).
+
+If you want to **build** something like them — or understand how they work —
+start here. See [Building an emulator on this](#building-an-emulator-on-this).
 
 ## Build
 
@@ -121,6 +123,40 @@ Addressing: register, immediate, `[base + index*scale + disp]`, RIP-relative.
 - 8- and 16-bit widths are refused (they merge rather than zero-extend).
 - Variable-count shifts (`shl reg, cl`) and indirect `JMP`/`CALL` are refused.
 - `JP`/`JNP` are refused — AArch64 has no parity flag.
+
+## Building an emulator on this
+
+This is the same pipeline FEX-Emu, box64 and QEMU are built on, with the
+structural work already in place:
+
+- **A typed SSA IR with a verifier**, so a malformed translation fails loudly
+  instead of producing wrong code.
+- **A register allocator** with liveness tracking and pinned guest registers.
+- **Compile-time-verified ARM64 encodings**, so the backend can grow without
+  silent encoding bugs.
+- **A per-flag validity model** — the part most hobby translators get wrong,
+  and the reason this one refuses rather than mistranslates.
+- **W^X JIT memory** working on Windows, Linux and Apple Silicon.
+- **A translation cache and dispatch loop** at block granularity.
+
+Adding an instruction touches four places — decoder mnemonic, IR opcode, lifter
+case, backend lowering — plus a test at each layer. The instructions already
+implemented are worked examples of every operand form you will need.
+
+What stands between this and running real programs, roughly in order:
+
+| Step | Why it matters |
+|---|---|
+| `MOVZX`/`MOVSX`, indirect `JMP`/`CALL` | 8/16-bit data, function pointers, vtables |
+| Block chaining | patch direct branches between blocks instead of returning to the dispatcher — typically 5–10× on hot loops |
+| Lazy flags | materialise NZCV only when a condition consumes it; also how PF and AF become expressible |
+| SSE2 | the mandatory baseline for x86-64 — even `memcpy` uses it |
+| Loader + syscall translation | ELF/Mach-O/PE, guest `mmap`, signals, TLS |
+| Memory ordering | x86 is TSO, ARM is weakly ordered; Apple Silicon exposes a hardware TSO bit for exactly this |
+
+That is a large body of work — FEX is on the order of 500k lines and years of
+effort — but none of it requires rethinking the architecture here. Take the
+roadmap below and extend outward.
 
 ## Roadmap
 
