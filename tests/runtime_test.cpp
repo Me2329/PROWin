@@ -198,18 +198,23 @@ TEST(Dispatcher, StatusNames) {
 // --- Execution -------------------------------------------------------------
 
 TEST(Dispatcher, RunRefusesOnHostsThatCannotExecuteArm64) {
+    // Only meaningful where the refusal path is reachable. On an ARM64 host
+    // run() really executes, and this fixture has no stack: CpuState starts
+    // zeroed, so guest RSP is 0 and the RET lowering pops from a null pointer.
+    // With no memory sandbox that is a genuine host segfault rather than a
+    // translator bug -- see DispatcherExec below, which supplies a real stack.
+    if (dbt::host_can_execute_arm64()) {
+        GTEST_SKIP() << "host can execute ARM64; the refusal path is unreachable";
+    }
+
     Dispatcher dispatcher(kMovRet, kBase);
     CpuState state;
     state.rip = kBase;
 
+    // The critical safety property: never jump into foreign machine code.
     const auto result = dispatcher.run(state);
-    if (dbt::host_can_execute_arm64()) {
-        EXPECT_NE(result.status, ExecStatus::HostCannotExecute);
-    } else {
-        // The critical safety property: never jump into foreign machine code.
-        EXPECT_EQ(result.status, ExecStatus::HostCannotExecute);
-        EXPECT_EQ(result.steps, 0u);
-    }
+    EXPECT_EQ(result.status, ExecStatus::HostCannotExecute);
+    EXPECT_EQ(result.steps, 0u);
 }
 
 #if defined(__aarch64__) || defined(_M_ARM64)
