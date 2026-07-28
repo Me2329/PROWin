@@ -61,6 +61,7 @@ private:
 
     void emit_prologue();
     void emit_epilogue();
+    void emit_chain_check();
     void emit_const(Reg dst, i64 value, a64::Width width);
     void lower(ir::InstId id, usize position);
     void compute_layout_and_liveness();
@@ -73,6 +74,10 @@ private:
     std::vector<Arm64Word> words_;
     std::vector<Fixup> fixups_;
     std::vector<usize> block_start_;
+    std::vector<LinkSite> link_sites_;
+    /// Block currently being lowered, so Return can tell whether it is a
+    /// chainable exit.
+    const ir::BasicBlock* current_block_ = nullptr;
 
     /// Emission order: flattened instruction ids, and each id's position in it.
     std::vector<ir::InstId> order_;
@@ -206,6 +211,36 @@ void FunctionCompiler::emit_prologue() {
         const auto guest = static_cast<decoder::X86Reg>(i);
         emit(a64::ldr_imm(map_gpr(guest), kCpuStateBase, runtime::gpr_offset(guest)));
     }
+}
+
+void FunctionCompiler::emit_chain_check() {
+    if (current_block_ == nullptr || !current_block_->is_exit) {
+        return;
+    }
+
+    const usize slot = link_sites_.size();
+    const auto slot_offset = static_cast<u32>(slot * 8);
+    if (!a64::fits_ldst_offset64(slot_offset)) {
+        // More exits than the load offset can address; leave this one
+        // unchained rather than emitting a wrong access.
+        return;
+    }
+    link_sites_.push_back(LinkSite{slot, current_block_->guest_addr});
+
+    // The scratch register is free here: an exit block is `const, store rip,
+    // return`, and the constant's temporary died at the store.
+    //
+    // Both loads are guarded. A null table means chaining is disabled entirely
+    // -- CpuState default-initialises it that way -- and a null slot means the
+    // successor has not been translated yet. Either way the branch is skipped
+    // and the epilogue below returns to the dispatcher.
+    const auto skip = static_cast<i32>(kArm64InstSize);
+    emit(a64::ldr_imm(kScratch0, kCpuStateBase,
+                      static_cast<u32>(runtime::kLinkTableOffset)));
+    emit(a64::cbz(kScratch0, 4 * skip));
+    emit(a64::ldr_imm(kScratch0, kScratch0, slot_offset));
+    emit(a64::cbz(kScratch0, 2 * skip));
+    emit(a64::br(kScratch0));
 }
 
 void FunctionCompiler::emit_epilogue() {
@@ -552,6 +587,9 @@ void FunctionCompiler::lower(ir::InstId id, usize position) {
     }
 
     case ir::Opcode::Return:
+        // Chainable exits try their link slot first; everything else, and any
+        // unlinked slot, falls through to the epilogue.
+        emit_chain_check();
         emit_epilogue();
         break;
     }
@@ -575,6 +613,7 @@ CompileResult FunctionCompiler::run() {
     usize position = 0;
     for (const ir::BasicBlock& blk : func_.blocks()) {
         block_start_[blk.id] = words_.size();
+        current_block_ = &blk;
         for (const ir::InstId id : blk.insts) {
             lower(id, position);
             if (failed()) {
@@ -607,6 +646,7 @@ CompileResult FunctionCompiler::run() {
     }
 
     result.words = std::move(words_);
+    result.link_sites = std::move(link_sites_);
     return result;
 }
 

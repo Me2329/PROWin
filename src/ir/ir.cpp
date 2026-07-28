@@ -37,6 +37,12 @@ InstId Function::append(BlockId block, const Inst& inst) {
     return id;
 }
 
+void Function::mark_exit(BlockId block) {
+    if (block < blocks_.size()) {
+        blocks_[block].is_exit = true;
+    }
+}
+
 const Inst& Function::inst(InstId id) const {
     if (id >= insts_.size()) {
         throw std::out_of_range("ir::Function::inst: invalid instruction id");

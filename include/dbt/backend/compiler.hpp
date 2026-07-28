@@ -31,9 +31,23 @@ enum class CompileError : u8 {
 
 [[nodiscard]] std::string_view to_string(CompileError value) noexcept;
 
+/// One chainable exit in a compiled block.
+///
+/// The emitted code reads `CpuState::link_table[slot]`; once the runtime has
+/// translated `target`, writing that block's chained entry point into the slot
+/// turns the exit into a direct branch.
+struct LinkSite {
+    /// Index into the link table, assigned by the compiler.
+    usize slot = 0;
+    /// Guest address this exit leads to.
+    GuestAddr target = 0;
+};
+
 struct CompileResult {
     /// The emitted instruction stream, one word per AArch64 instruction.
     std::vector<Arm64Word> words;
+    /// Chainable exits, in slot order.
+    std::vector<LinkSite> link_sites;
     CompileError error = CompileError::None;
     /// Instruction that could not be lowered, when one is to blame.
     ir::InstId error_inst = ir::kNoInst;
@@ -79,6 +93,14 @@ private:
 /// Instructions the prologue occupies: frame save (3), frame pointer, CpuState
 /// pointer, then one load per guest register. Exposed so tests can index past
 /// it into the block body.
+///
+/// A block entered through a chained branch starts here instead, skipping the
+/// sixteen register reloads because the predecessor left them live.
 inline constexpr usize kPrologueWords = 5 + 16;
+
+/// Instructions a chainable exit adds before its epilogue: load the table,
+/// test it, load the slot, test it, branch. Both loads are guarded because a
+/// CpuState with no link table must not be dereferenced.
+inline constexpr usize kChainWords = 5;
 
 }  // namespace dbt::backend

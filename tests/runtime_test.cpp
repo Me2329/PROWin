@@ -37,7 +37,8 @@ TEST(CpuStateLayout, MatchesTheOffsetsEmittedCodeUses) {
     static_assert(dbt::runtime::gpr_offset(X86Reg::Rbx) == 24);
     static_assert(dbt::runtime::gpr_offset(X86Reg::R15) == 120);
     static_assert(dbt::runtime::kRipOffset == 128);
-    static_assert(sizeof(CpuState) == 144);
+    static_assert(dbt::runtime::kLinkTableOffset == 144);
+    static_assert(sizeof(CpuState) == 152);
 
     const CpuState state;
     EXPECT_EQ(state.rip, 0u);

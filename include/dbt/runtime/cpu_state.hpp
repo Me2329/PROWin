@@ -28,16 +28,26 @@ struct CpuState {
     /// never cross a block boundary. The field exists for the runtime and for
     /// future cross-block flag support.
     u64 rflags = 0;
+    /// Base of the dispatcher's block-link table, or null when chaining is off.
+    ///
+    /// A chainable block exit loads its successor's host address from
+    /// `link_table[slot]` and branches straight to it, skipping the successor's
+    /// prologue. A null entry means "not linked yet" and falls back to the
+    /// dispatcher. The table lives in ordinary heap memory, so linking is a
+    /// plain data write -- no executable page ever becomes writable.
+    void** link_table = nullptr;
 };
 
 inline constexpr usize kGprOffset = 0;
 inline constexpr usize kRipOffset = 128;
 inline constexpr usize kRflagsOffset = 136;
+inline constexpr usize kLinkTableOffset = 144;
 
 static_assert(offsetof(CpuState, gpr) == kGprOffset);
 static_assert(offsetof(CpuState, rip) == kRipOffset);
 static_assert(offsetof(CpuState, rflags) == kRflagsOffset);
-static_assert(sizeof(CpuState) == 144);
+static_assert(offsetof(CpuState, link_table) == kLinkTableOffset);
+static_assert(sizeof(CpuState) == 152);
 static_assert(alignof(CpuState) == 8);
 
 /// Byte offset of a guest register within CpuState.

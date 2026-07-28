@@ -306,6 +306,11 @@ struct BasicBlock {
     /// Guest address this block starts at.
     GuestAddr guest_addr = 0;
     std::vector<InstId> insts;
+    /// True when this block exists only to leave the translated region at a
+    /// statically known guest address. Such exits can be chained: the backend
+    /// gives them a link slot so a later branch can jump straight to the
+    /// successor instead of returning to the dispatcher.
+    bool is_exit = false;
 };
 
 /// A translated region: a flat instruction pool plus the blocks indexing it.
@@ -327,6 +332,9 @@ public:
     [[nodiscard]] const std::vector<BasicBlock>& blocks() const noexcept {
         return blocks_;
     }
+
+    /// Marks `block` as a chainable exit to its guest address.
+    void mark_exit(BlockId block);
 
     [[nodiscard]] BlockId entry() const noexcept { return entry_; }
     void set_entry(BlockId id) noexcept { entry_ = id; }

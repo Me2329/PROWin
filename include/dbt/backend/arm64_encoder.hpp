@@ -404,6 +404,12 @@ enum class Width : u8 {
     return 0x54000000u | (imm19 << 5) | (static_cast<u32>(cond) & 0xFu);
 }
 
+/// CBZ Xt, #byte_offset -- branch when the register is zero.
+[[nodiscard]] constexpr Arm64Word cbz(Reg rt, i32 byte_offset) noexcept {
+    const u32 imm19 = detail::mask(static_cast<u32>(byte_offset / 4), 19);
+    return 0xB4000000u | (imm19 << 5) | detail::r(rt);
+}
+
 /// BR Xn -- indirect branch.
 [[nodiscard]] constexpr Arm64Word br(Reg rn) noexcept {
     return 0xD61F0000u | (detail::r(rn) << 5);

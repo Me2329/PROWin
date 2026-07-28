@@ -68,6 +68,8 @@ private:
     ir::BlockId make_exit(GuestAddr target) {
         const ir::BlockId saved = builder_.insert_point();
         const ir::BlockId exit = func_.create_block(target);
+        // Statically known target, so the backend can chain through it.
+        func_.mark_exit(exit);
         builder_.set_insert_point(exit);
         const ir::InstId addr = builder_.const_int(static_cast<i64>(target));
         static_cast<void>(builder_.store_guest_reg(X86Reg::Rip, addr));
