@@ -744,6 +744,27 @@ TEST(Compiler, NarrowRegisterWritesAreStillRefused) {
     EXPECT_EQ(compile_x86_verdict(code), CompileError::UnsupportedWidth);
 }
 
+// --- Indirect branches -----------------------------------------------------
+
+TEST(Compiler, IndirectJumpWritesTheTargetStraightIntoCpuStateRip) {
+    // FF E0  jmp rax -- rax is pinned to x0, so the target needs no move.
+    const std::array<u8, 2> code{0xFF, 0xE0};
+    const auto result = compile_x86(code);
+    EXPECT_TRUE(contains(
+        result, a64::str_imm(Reg::X0, Reg::X28,
+                             static_cast<dbt::u32>(dbt::runtime::kRipOffset))));
+}
+
+TEST(Compiler, IndirectCallCompilesToPushPlusRipPublication) {
+    // FF D0  call rax
+    const std::array<u8, 2> code{0xFF, 0xD0};
+    const auto result = compile_x86(code);
+    EXPECT_GT(result.words.size(), kPrologueWords);
+    EXPECT_TRUE(contains(
+        result, a64::str_imm(Reg::X0, Reg::X28,
+                             static_cast<dbt::u32>(dbt::runtime::kRipOffset))));
+}
+
 TEST(Compiler, EveryEmittedWordIsFourBytes) {
     const std::array<u8, 4> code{0x48, 0x01, 0xD8, 0xC3};
     const auto result = compile_x86(code);

@@ -334,13 +334,43 @@ TEST_F(LifterTest, JccWithoutPrecedingFlagsIsRejected) {
     EXPECT_EQ(res.error_addr, kBase);
 }
 
-TEST_F(LifterTest, IndirectJumpIsRejected) {
-    // FF E0  jmp rax
+TEST_F(LifterTest, IndirectJumpPublishesItsTargetAsTheNextRip) {
+    // FF E0  jmp rax -- the target is only known at run time, so it is handed
+    // to the dispatcher through CpuState.rip rather than becoming a branch.
     const std::array<u8, 2> code{0xFF, 0xE0};
-    const auto res = lifter.lift_block(code, kBase);
+    const auto res = lift_ok(code);
 
-    EXPECT_FALSE(res.ok());
-    EXPECT_EQ(res.error, LiftError::IndirectBranch);
+    const Function& f = res.function;
+    EXPECT_EQ(f.inst(0).opcode, Opcode::LoadGuestReg);
+    EXPECT_EQ(f.inst(0).guest_reg, X86Reg::Rax);
+    EXPECT_EQ(f.inst(1).opcode, Opcode::StoreGuestReg);
+    EXPECT_EQ(f.inst(1).guest_reg, X86Reg::Rip);
+    EXPECT_EQ(f.inst(2).opcode, Opcode::Return);
+    // No exit block is built, because there is no constant target to name.
+    EXPECT_EQ(f.block_count(), 1u);
+}
+
+TEST_F(LifterTest, IndirectJumpThroughMemoryLoadsItsTarget) {
+    // FF 23  jmp [rbx]
+    const std::array<u8, 2> code{0xFF, 0x23};
+    const auto res = lift_ok(code);
+    EXPECT_EQ(count_opcode(res.function, Opcode::LoadMem), 1u);
+    EXPECT_EQ(count_opcode(res.function, Opcode::Return), 1u);
+}
+
+TEST_F(LifterTest, IndirectCallReadsTheTargetBeforePushing) {
+    // FF D0  call rax -- x86 evaluates the operand against the pre-call RSP,
+    // so the target read must precede the push.
+    const std::array<u8, 2> code{0xFF, 0xD0};
+    const auto res = lift_ok(code);
+
+    const Function& f = res.function;
+    EXPECT_EQ(f.inst(0).opcode, Opcode::LoadGuestReg);
+    EXPECT_EQ(f.inst(0).guest_reg, X86Reg::Rax);
+    // One store for the pushed return address.
+    EXPECT_EQ(count_opcode(f, Opcode::StoreMem), 1u);
+    EXPECT_EQ(f.inst(static_cast<dbt::ir::InstId>(f.inst_count() - 1)).opcode,
+              Opcode::Return);
 }
 
 TEST_F(LifterTest, InstructionBudgetIsEnforced) {

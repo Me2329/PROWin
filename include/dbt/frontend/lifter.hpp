@@ -18,7 +18,12 @@ enum class LiftError : u8 {
     /// A Jcc with no flag-defining instruction earlier in the same block.
     /// Cross-block flag dependencies are not modelled.
     FlagsUnavailable,
-    /// JMP through a register or memory operand.
+    /// A branch whose target operand is neither a register nor a memory
+    /// reference -- the far-branch encodings the translator does not model.
+    ///
+    /// Ordinary register- and memory-indirect branches *are* supported: the
+    /// computed target is published as the next guest RIP and control returns
+    /// to the dispatcher, which resolves it at run time.
     IndirectBranch,
     /// The instruction budget ran out before a terminator was reached.
     BlockTooLong,

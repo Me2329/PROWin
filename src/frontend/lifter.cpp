@@ -76,6 +76,24 @@ private:
         return exit;
     }
 
+    /// Produces the run-time target of an indirect branch.
+    ///
+    /// `ok` is cleared for operand forms that are not a plain register or
+    /// memory reference -- the far-branch encodings the translator does not
+    /// model.
+    ir::InstId read_branch_target(const DecodedInst& inst, bool& ok) {
+        ok = false;
+        if (inst.operand_count != 1) {
+            return ir::kNoInst;
+        }
+        const Operand& target = inst.op(0);
+        if (target.kind != OperandKind::Register &&
+            target.kind != OperandKind::Memory) {
+            return ir::kNoInst;
+        }
+        return read(inst, target, ok);
+    }
+
     /// rsp -= 8, then store `value` at the new top of stack.
     ///
     /// The guest stack pointer is an ordinary mapped register, so PUSH is just
@@ -213,11 +231,21 @@ LiftError BlockLifter::lower(const DecodedInst& inst) {
     }
 
     case Mnemonic::Jmp: {
-        if (!inst.has_branch_target) {
+        if (inst.has_branch_target) {
+            const ir::BlockId exit = make_exit(inst.branch_target);
+            static_cast<void>(builder_.jump(exit));
+            return LiftError::None;
+        }
+        // Indirect: the target is only known at run time, so compute it,
+        // publish it as the next RIP and hand control back to the dispatcher,
+        // which will translate whatever block lives there.
+        bool ok = false;
+        const ir::InstId target = read_branch_target(inst, ok);
+        if (!ok) {
             return LiftError::IndirectBranch;
         }
-        const ir::BlockId exit = make_exit(inst.branch_target);
-        static_cast<void>(builder_.jump(exit));
+        static_cast<void>(builder_.store_guest_reg(X86Reg::Rip, target));
+        static_cast<void>(builder_.ret());
         return LiftError::None;
     }
 
@@ -277,14 +305,26 @@ LiftError BlockLifter::lower(const DecodedInst& inst) {
     }
 
     case Mnemonic::Call: {
-        if (!inst.has_branch_target) {
+        if (inst.has_branch_target) {
+            const ir::InstId return_addr =
+                builder_.const_int(static_cast<i64>(inst.next_address()));
+            push_value(return_addr);
+            const ir::BlockId exit = make_exit(inst.branch_target);
+            static_cast<void>(builder_.jump(exit));
+            return LiftError::None;
+        }
+        // x86 reads the target operand *before* the push adjusts RSP, which
+        // matters for forms like `call [rsp+8]`, so compute it first.
+        bool ok = false;
+        const ir::InstId target = read_branch_target(inst, ok);
+        if (!ok) {
             return LiftError::IndirectBranch;
         }
         const ir::InstId return_addr =
             builder_.const_int(static_cast<i64>(inst.next_address()));
         push_value(return_addr);
-        const ir::BlockId exit = make_exit(inst.branch_target);
-        static_cast<void>(builder_.jump(exit));
+        static_cast<void>(builder_.store_guest_reg(X86Reg::Rip, target));
+        static_cast<void>(builder_.ret());
         return LiftError::None;
     }
 

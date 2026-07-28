@@ -120,8 +120,9 @@ Addressing: register, immediate, `[base + index*scale + disp]`, RIP-relative.
   but nothing calls it automatically.
 - **No memory-ordering model.** x86 is TSO, ARM is weakly ordered. Multithreaded
   guests would need barriers, or Apple Silicon's hardware TSO mode.
-- 8- and 16-bit widths are refused (they merge rather than zero-extend).
-- Variable-count shifts (`shl reg, cl`) and indirect `JMP`/`CALL` are refused.
+- 8- and 16-bit *register writes* are refused (they merge rather than
+  zero-extend); byte and halfword memory access is supported.
+- Variable-count shifts (`shl reg, cl`) are refused.
 - `JP`/`JNP` are refused — AArch64 has no parity flag.
 
 ## Building an emulator on this
