@@ -16,6 +16,7 @@ if(PROJECT_IS_TOP_LEVEL)
 endif()
 
 option(DBT_BUILD_TESTS "Build the dbt unit test suite" ${PROJECT_IS_TOP_LEVEL})
+option(DBT_BUILD_EXAMPLES "Build the example programs" ${PROJECT_IS_TOP_LEVEL})
 option(DBT_WERROR "Treat compiler warnings as errors" ON)
 option(DBT_ENABLE_ASAN "Build with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 # Hardening is on by default: this library writes and executes generated code,
@@ -40,6 +41,10 @@ add_subdirectory(src)
 if(DBT_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+if(DBT_BUILD_EXAMPLES)
+    add_subdirectory(examples)
 endif()
 
 message(STATUS "dbt ${PROJECT_VERSION}")

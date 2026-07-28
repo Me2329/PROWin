@@ -44,6 +44,16 @@ available there via `mac-asan`):
 cmake --preset mac-debug && cmake --build --preset mac-debug && ctest --preset mac-debug
 ```
 
+## Try it
+
+```bash
+cmake --preset debug && cmake --build --preset debug && ./build/debug/examples/dbt_translate
+```
+
+Takes one clang-compiled function, prints the SSA IR, prints the emitted ARM64
+words, and — on an ARM64 host — runs it. The first two stages work on any
+machine, which is how the backend is developed on x86.
+
 ## Using it
 
 ```cpp
@@ -100,6 +110,20 @@ decide.
 `UnsupportedWidth`, `FlagsUnavailable`, `IndirectBranch`, `BranchOutOfRange`.
 The translator refuses rather than emitting plausible-but-wrong code.
 
+**Blocks chain through a link table, not patched branches.** An exit with a
+statically known target loads its successor's address from
+`CpuState::link_table[slot]` and branches straight into its body, skipping the
+prologue because the predecessor left the guest registers live. That replaces a
+~35-instruction dispatcher round trip — sixteen spills, frame teardown, hash
+lookup, re-entry, sixteen reloads — with five instructions.
+
+Patching direct branches would have been faster still, but it needs a code arena
+(so blocks land within ±128 MB) and unsealing executable pages to RW for each
+patch. Reading from heap memory costs one extra load and keeps executable pages
+permanently non-writable. Both loads are guarded: a null table means chaining is
+off, a null slot means the successor is not translated yet, and either falls
+back to the dispatcher.
+
 **JIT memory is W^X.** Mapped read/write, filled, then flipped to read/execute —
 never both, with no path back to writable. Apple Silicon uses `MAP_JIT` with
 `pthread_jit_write_protect_np`, since the kernel refuses `mprotect(PROT_EXEC)`
@@ -107,10 +131,12 @@ on ordinary anonymous memory there.
 
 ## Supported instructions
 
-`MOV` `ADD` `SUB` `CMP` `AND` `OR` `XOR` `TEST` `NOT` `NEG` `LEA` `PUSH` `POP`
-`CALL` `SHL` `SHR` `SAR` `INC` `DEC` `JMP` `Jcc` `RET`
+`MOV` `MOVZX` `MOVSX` `ADD` `SUB` `CMP` `AND` `OR` `XOR` `TEST` `NOT` `NEG`
+`LEA` `PUSH` `POP` `CALL` `SHL` `SHR` `SAR` `INC` `DEC` `JMP` `Jcc` `RET`
 
 Addressing: register, immediate, `[base + index*scale + disp]`, RIP-relative.
+Branches may be direct or register/memory-indirect, so function pointers and
+virtual dispatch translate.
 
 ## Known limitations
 
@@ -161,9 +187,17 @@ roadmap below and extend outward.
 
 ## Roadmap
 
-`MOVZX`/`MOVSX` → indirect branches → block chaining (patch direct branches
-between translated blocks instead of returning to the dispatcher) → lazy flags
-(materialise NZCV only when a condition consumes it) → SSE2.
+Done: `MOVZX`/`MOVSX`, register- and memory-indirect branches, block chaining.
+
+Next, in order:
+
+1. **Lazy flags** — materialise NZCV only when a condition consumes it. The
+   per-flag validity model is already in place; deferring the computation is
+   what turns it into a performance win, and it is also how PF and AF become
+   expressible instead of refused.
+2. **SSE2** — the mandatory baseline for x86-64.
+3. **Loader and syscall translation** — ELF/Mach-O/PE, guest `mmap`, signals.
+4. **Memory ordering** — x86 TSO on a weakly-ordered CPU.
 
 ## License
 
